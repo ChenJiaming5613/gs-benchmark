@@ -1,16 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   DirectorySelector,
   type DirectorySelectorResult,
 } from "@/components/DirectorySelector";
 import { type ImageMetric } from "@/components/ImageCard";
-import {
-  MetricsOverview,
-  type MetricsOverviewRow,
-} from "@/components/MetricsOverview";
+import { loadEvalCache, saveEvalCache } from "@/components/EvalCache";
+import { MetricsOverview, type MetricsOverviewRow } from "@/components/MetricsOverview";
 import { ImageGallery, type ImageGalleryDirectory } from "@/components/ImageGallery";
 
 type ImageEntry = {
@@ -45,7 +43,10 @@ export default function EvalPage() {
   const [selecting, setSelecting] = useState(false);
   const [selectedMetricRowKeys, setSelectedMetricRowKeys] = useState<string[]>([]);
   const [selectedMetricRowData, setSelectedMetricRowData] = useState<MetricsOverviewRow[]>([]);
+  const [experimentNames, setExperimentNames] = useState<Record<string, string>>({});
   const [directoryData, setDirectoryData] = useState<Record<string, DirectoryData>>({});
+  const hydrationRef = useRef(true);
+  const skipNextSaveRef = useRef(true);
 
   const fetchImages = useCallback(
     async (targetDirectory: string): Promise<DirectorySelectorResult> => {
@@ -256,6 +257,60 @@ export default function EvalPage() {
     }
   }, [directories, activeDirectory]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrate = async () => {
+      const payload = loadEvalCache();
+      if (!payload) {
+        hydrationRef.current = false;
+        skipNextSaveRef.current = false;
+        return;
+      }
+
+      setDirectories(payload.directories ?? []);
+      setExperimentNames(payload.experimentNames ?? {});
+      setSelectedMetricRowKeys(payload.selectedRowKeys ?? []);
+
+      for (const directory of payload.directories ?? []) {
+        if (cancelled) {
+          break;
+        }
+
+        const result = await fetchImages(directory);
+        if (!result.success) {
+          break;
+        }
+      }
+
+      hydrationRef.current = false;
+      skipNextSaveRef.current = true;
+    };
+
+    void hydrate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchImages]);
+
+  useEffect(() => {
+    if (hydrationRef.current) {
+      return;
+    }
+
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+
+    saveEvalCache({
+      directories,
+      experimentNames,
+      selectedRowKeys: selectedMetricRowKeys,
+    });
+  }, [directories, experimentNames, selectedMetricRowKeys]);
+
   const galleryDirectories = useMemo<ImageGalleryDirectory[]>(() => {
     if (!selectedMetricRowData.length) {
       return [];
@@ -367,6 +422,8 @@ export default function EvalPage() {
         <MetricsOverview
           directories={directories}
           selectedRowKeys={selectedMetricRowKeys}
+          initialExperimentNames={experimentNames}
+          onExperimentNamesChange={setExperimentNames}
           onSelectedRowKeysChange={(keys, rows) => {
             setSelectedMetricRowKeys(keys);
             if (Array.isArray(rows)) {

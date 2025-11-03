@@ -2,6 +2,27 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+type ExperimentNames = Record<string, string>;
+type ExperimentNamesUpdater = ExperimentNames | ((previous: ExperimentNames) => ExperimentNames);
+type UpdateExperimentNamesOptions = { notify?: boolean };
+
+const areExperimentNameRecordsEqual = (a: ExperimentNames, b: ExperimentNames) => {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+
+  if (keysA.length !== keysB.length) {
+    return false;
+  }
+
+  for (const key of keysA) {
+    if (a[key] !== b[key]) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 export type MetricsOverviewRow = {
   experiment: string;
   iteration: string;
@@ -14,24 +35,85 @@ export type MetricsOverviewProps = {
   directories: string[];
   selectedRowKeys: string[];
   onSelectedRowKeysChange?: (keys: string[], rows: MetricsOverviewRow[]) => void;
+  initialExperimentNames?: Record<string, string>;
+  onExperimentNamesChange?: (names: Record<string, string>) => void;
 };
 
 export function MetricsOverview({
   directories,
   selectedRowKeys,
   onSelectedRowKeysChange,
+  initialExperimentNames,
+  onExperimentNamesChange,
 }: MetricsOverviewProps) {
   const [rows, setRows] = useState<MetricsOverviewRow[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [experimentNames, setExperimentNames] = useState<Record<string, string>>({});
+  const pendingExperimentNamesRef = useRef<ExperimentNames | null>(null);
+
+  const updateExperimentNames = useCallback(
+    (updater: ExperimentNamesUpdater, options?: UpdateExperimentNamesOptions) => {
+      setExperimentNames((previous) => {
+        const next = typeof updater === "function" ? updater(previous) : updater;
+
+        if (areExperimentNameRecordsEqual(previous, next)) {
+          if (options?.notify === false) {
+            pendingExperimentNamesRef.current = null;
+          }
+          return previous;
+        }
+
+        if (options?.notify === false) {
+          pendingExperimentNamesRef.current = null;
+        } else {
+          pendingExperimentNamesRef.current = next;
+        }
+
+        return next;
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!initialExperimentNames) {
+      return;
+    }
+
+    updateExperimentNames((previous) => {
+      if (areExperimentNameRecordsEqual(previous, initialExperimentNames)) {
+        return previous;
+      }
+
+      return initialExperimentNames;
+    }, { notify: false });
+  }, [initialExperimentNames, updateExperimentNames]);
+
+  useEffect(() => {
+    if (!onExperimentNamesChange) {
+      return;
+    }
+
+    if (!pendingExperimentNamesRef.current) {
+      return;
+    }
+
+    onExperimentNamesChange(pendingExperimentNamesRef.current);
+    pendingExperimentNamesRef.current = null;
+  }, [experimentNames, onExperimentNamesChange]);
 
   useEffect(() => {
     const load = async () => {
       if (!directories.length) {
         setRows([]);
         setErrors([]);
-        setExperimentNames({});
+        updateExperimentNames((previous) => {
+          if (Object.keys(previous).length === 0) {
+            return previous;
+          }
+          return {};
+        });
         return;
       }
 
@@ -98,7 +180,7 @@ export function MetricsOverview({
 
         setRows(augmentedRows);
         setErrors(Array.isArray(payload?.errors) ? payload.errors : []);
-        setExperimentNames((previous) => {
+        updateExperimentNames((previous) => {
           if (!sortedRows.length) {
             return {};
           }
@@ -234,10 +316,16 @@ export function MetricsOverview({
   }, [selectedRowKeys, rowMap, onSelectedRowKeysChange]);
 
   const handleExperimentNameChange = (experiment: string, value: string) => {
-    setExperimentNames((previous) => ({
-      ...previous,
-      [experiment]: value,
-    }));
+    updateExperimentNames((previous) => {
+      if (previous[experiment] === value) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        [experiment]: value,
+      };
+    });
   };
 
   const handleMoveRow = useCallback(
