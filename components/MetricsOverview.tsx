@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type MetricsOverviewRow = {
   experiment: string;
@@ -59,7 +59,19 @@ export function MetricsOverview({
         const rawRows: MetricsOverviewRow[] = Array.isArray(payload?.rows)
           ? payload.rows
           : [];
+
+        const directoryOrder = new Map<string, number>();
+        directories.forEach((directory, index) => {
+          directoryOrder.set(directory, index);
+        });
+
         const sortedRows = [...rawRows].sort((a, b) => {
+          const directoryIndexA = directoryOrder.get(a.experiment) ?? Number.MAX_SAFE_INTEGER;
+          const directoryIndexB = directoryOrder.get(b.experiment) ?? Number.MAX_SAFE_INTEGER;
+          if (directoryIndexA !== directoryIndexB) {
+            return directoryIndexA - directoryIndexB;
+          }
+
           const iterationCompare = a.iteration.localeCompare(b.iteration, "en", {
             numeric: true,
           });
@@ -91,18 +103,53 @@ export function MetricsOverview({
             return {};
           }
 
-          const experiments = Array.from(new Set(sortedRows.map((row) => row.experiment)));
+          const experiments = Array.from(new Set(sortedRows.map((row) => row.experiment))).sort((a, b) => {
+            const orderA = directoryOrder.get(a) ?? Number.MAX_SAFE_INTEGER;
+            const orderB = directoryOrder.get(b) ?? Number.MAX_SAFE_INTEGER;
+            if (orderA === orderB) {
+              return a.localeCompare(b, "en", { numeric: true });
+            }
+            return orderA - orderB;
+          });
+          if (!experiments.length) {
+            return previous;
+          }
+
           let changed = false;
           const next: Record<string, string> = {};
+          const usedLabels = new Set<string>();
+          let maxNumber = 0;
 
-          experiments.forEach((experiment, index) => {
+          experiments.forEach((experiment) => {
             const existing = previous[experiment];
             if (existing) {
               next[experiment] = existing;
-            } else {
-              next[experiment] = `exp${index + 1}`;
-              changed = true;
+              usedLabels.add(existing);
+              const match = /^exp(\d+)$/.exec(existing);
+              if (match) {
+                const numeric = Number(match[1]);
+                if (numeric > maxNumber) {
+                  maxNumber = numeric;
+                }
+              }
             }
+          });
+
+          experiments.forEach((experiment) => {
+            if (next[experiment]) {
+              return;
+            }
+
+            let candidate = maxNumber + 1;
+            let label = `exp${candidate}`;
+            while (usedLabels.has(label)) {
+              candidate += 1;
+              label = `exp${candidate}`;
+            }
+            maxNumber = candidate;
+            next[experiment] = label;
+            usedLabels.add(label);
+            changed = true;
           });
 
           Object.keys(previous).forEach((experiment) => {
@@ -126,6 +173,8 @@ export function MetricsOverview({
     void load();
   }, [directories]);
 
+  const getRowKey = useCallback((row: MetricsOverviewRow) => `${row.experiment}__${row.rawIteration}`, []);
+
   const rowsWithNames = useMemo<MetricsOverviewRow[]>(
     () =>
       rows.map((row) => ({
@@ -146,10 +195,10 @@ export function MetricsOverview({
   const rowMap = useMemo(() => {
     const map = new Map<string, MetricsOverviewRow>();
     rowsWithNames.forEach((row) => {
-      map.set(`${row.experiment}__${row.rawIteration}`, row);
+      map.set(getRowKey(row), row);
     });
     return map;
-  }, [rowsWithNames]);
+  }, [rowsWithNames, getRowKey]);
 
   const lastSyncedSignature = useRef<string | null>(null);
 
@@ -190,6 +239,41 @@ export function MetricsOverview({
       [experiment]: value,
     }));
   };
+
+  const handleMoveRow = useCallback(
+    (index: number, direction: -1 | 1) => {
+      let updatedRows: MetricsOverviewRow[] | null = null;
+
+      setRows((previous) => {
+        const targetIndex = index + direction;
+        if (targetIndex < 0 || targetIndex >= previous.length) {
+          return previous;
+        }
+
+        const next = [...previous];
+        const [moved] = next.splice(index, 1);
+        next.splice(targetIndex, 0, moved);
+
+        updatedRows = next;
+        return next;
+      });
+
+      if (!onSelectedRowKeysChange) {
+        return;
+      }
+
+      const sourceRows = updatedRows ?? rows;
+      const selectedSet = new Set(selectedRowKeys);
+      const orderedSelected: MetricsOverviewRow[] = sourceRows.filter((row) => selectedSet.has(getRowKey(row)));
+      const nextKeys = orderedSelected.map((row) => getRowKey(row));
+      const enrichedRows = orderedSelected.map((row) => ({
+        ...row,
+        experimentName: row.experimentName ?? experimentNames[row.experiment] ?? "",
+      }));
+      onSelectedRowKeysChange(nextKeys, enrichedRows);
+    },
+    [experimentNames, getRowKey, onSelectedRowKeysChange, rows, selectedRowKeys]
+  );
 
   const handleToggleRow = (key: string) => {
     if (!onSelectedRowKeysChange) {
@@ -232,6 +316,9 @@ export function MetricsOverview({
               <th className="w-12 px-3 py-2 text-left text-zinc-900 dark:text-zinc-100">
                 <span className="sr-only">选择</span>
               </th>
+              <th className="w-16 px-3 py-2 text-left text-zinc-900 dark:text-zinc-100">
+                <span className="sr-only">Reorder</span>
+              </th>
               <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-zinc-900 dark:text-zinc-100">
                 exp_name
               </th>
@@ -256,7 +343,7 @@ export function MetricsOverview({
               <tr>
                 <td
                   className="px-3 py-4 text-center text-zinc-500 dark:text-zinc-400"
-                  colSpan={4 + metricColumns.length}
+                  colSpan={5 + metricColumns.length}
                 >
                   Loading metrics...
                 </td>
@@ -265,7 +352,7 @@ export function MetricsOverview({
               <tr>
                 <td
                   className="px-3 py-4 text-center text-zinc-500 dark:text-zinc-400"
-                  colSpan={4 + metricColumns.length}
+                  colSpan={5 + metricColumns.length}
                 >
                   No metrics found. Please ensure a results.json file exists in each directory.
                 </td>
@@ -288,6 +375,28 @@ export function MetricsOverview({
                         checked={checked}
                         onChange={() => handleToggleRow(key)}
                       />
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded border border-zinc-300 px-1 py-0.5 text-[10px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                          onClick={() => handleMoveRow(index, -1)}
+                          disabled={index === 0}
+                          aria-label="Move row up"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border border-zinc-300 px-1 py-0.5 text-[10px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                          onClick={() => handleMoveRow(index, 1)}
+                          disabled={index === rowsWithNames.length - 1}
+                          aria-label="Move row down"
+                        >
+                          ↓
+                        </button>
+                      </div>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-zinc-700 dark:text-zinc-200">
                       <input
