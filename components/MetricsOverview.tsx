@@ -23,6 +23,12 @@ const areExperimentNameRecordsEqual = (a: ExperimentNames, b: ExperimentNames) =
   return true;
 };
 
+const METRIC_LABELS: Record<string, string> = {
+  point_cloud_size_mb: "model size (MB)",
+};
+
+const formatMetricLabel = (metric: string) => METRIC_LABELS[metric] ?? metric;
+
 export type MetricsOverviewRow = {
   experiment: string;
   iteration: string;
@@ -51,6 +57,8 @@ export function MetricsOverview({
   const [loading, setLoading] = useState(false);
   const [experimentNames, setExperimentNames] = useState<Record<string, string>>({});
   const pendingExperimentNamesRef = useRef<ExperimentNames | null>(null);
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
 
   const updateExperimentNames = useCallback(
     (updater: ExperimentNamesUpdater, options?: UpdateExperimentNamesOptions) => {
@@ -328,18 +336,26 @@ export function MetricsOverview({
     });
   };
 
-  const handleMoveRow = useCallback(
-    (index: number, direction: -1 | 1) => {
+  const reorderRows = useCallback(
+    (sourceIndex: number, targetIndex: number) => {
+      if (sourceIndex === targetIndex) {
+        return;
+      }
+
       let updatedRows: MetricsOverviewRow[] | null = null;
 
       setRows((previous) => {
-        const targetIndex = index + direction;
-        if (targetIndex < 0 || targetIndex >= previous.length) {
+        if (
+          sourceIndex < 0 ||
+          sourceIndex >= previous.length ||
+          targetIndex < 0 ||
+          targetIndex >= previous.length
+        ) {
           return previous;
         }
 
         const next = [...previous];
-        const [moved] = next.splice(index, 1);
+        const [moved] = next.splice(sourceIndex, 1);
         next.splice(targetIndex, 0, moved);
 
         updatedRows = next;
@@ -359,6 +375,7 @@ export function MetricsOverview({
         experimentName: row.experimentName ?? experimentNames[row.experiment] ?? "",
       }));
       onSelectedRowKeysChange(nextKeys, enrichedRows);
+      setDropTargetIndex(null);
     },
     [experimentNames, getRowKey, onSelectedRowKeysChange, rows, selectedRowKeys]
   );
@@ -375,9 +392,18 @@ export function MetricsOverview({
       nextKeys.add(key);
     }
 
-    const arrayKeys = Array.from(nextKeys);
-    const selectedRows = arrayKeys.map((item) => rowMap.get(item)!).filter(Boolean);
-    onSelectedRowKeysChange(arrayKeys, selectedRows);
+    const orderedKeys: string[] = [];
+    const orderedRows: MetricsOverviewRow[] = [];
+
+    rowsWithNames.forEach((row) => {
+      const rowKey = getRowKey(row);
+      if (nextKeys.has(rowKey)) {
+        orderedKeys.push(rowKey);
+        orderedRows.push(row);
+      }
+    });
+
+    onSelectedRowKeysChange(orderedKeys, orderedRows);
   };
 
   return (
@@ -404,9 +430,6 @@ export function MetricsOverview({
               <th className="w-12 px-3 py-2 text-left text-zinc-900 dark:text-zinc-100">
                 <span className="sr-only">选择</span>
               </th>
-              <th className="w-16 px-3 py-2 text-left text-zinc-900 dark:text-zinc-100">
-                <span className="sr-only">Reorder</span>
-              </th>
               <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-zinc-900 dark:text-zinc-100">
                 exp_name
               </th>
@@ -419,9 +442,9 @@ export function MetricsOverview({
               {metricColumns.map((metric) => (
                 <th
                   key={metric}
-                  className="whitespace-nowrap px-3 py-2 text-left font-semibold uppercase tracking-wide text-zinc-900 dark:text-zinc-100"
+                  className="whitespace-nowrap px-3 py-2 text-left font-semibold tracking-wide text-zinc-900 dark:text-zinc-100"
                 >
-                  {metric}
+                  {formatMetricLabel(metric)}
                 </th>
               ))}
             </tr>
@@ -431,7 +454,7 @@ export function MetricsOverview({
               <tr>
                 <td
                   className="px-3 py-4 text-center text-zinc-500 dark:text-zinc-400"
-                  colSpan={5 + metricColumns.length}
+                  colSpan={4 + metricColumns.length}
                 >
                   Loading metrics...
                 </td>
@@ -440,7 +463,7 @@ export function MetricsOverview({
               <tr>
                 <td
                   className="px-3 py-4 text-center text-zinc-500 dark:text-zinc-400"
-                  colSpan={5 + metricColumns.length}
+                  colSpan={4 + metricColumns.length}
                 >
                   No metrics found. Please ensure a results.json file exists in each directory.
                 </td>
@@ -450,11 +473,75 @@ export function MetricsOverview({
                 const key = `${row.experiment}__${row.rawIteration}`;
                 const checked = selectedRowKeys.includes(key);
                 const currentExperimentName = row.experimentName ?? "";
+                const isDragging = draggingIndex === index;
+                const isDropTarget =
+                  dropTargetIndex === index && draggingIndex !== null && draggingIndex !== index;
+
+                const transforms: string[] = [];
+                const style: React.CSSProperties = {};
+
+                if (isDragging) {
+                  transforms.push("scale(1.01)");
+                  style.position = "relative";
+                  style.zIndex = 10;
+                }
+
+                if (transforms.length > 0) {
+                  style.transform = transforms.join(" ");
+                }
 
                 return (
                   <tr
                     key={`${key}-${index}`}
-                    className={checked ? "bg-zinc-100/60 dark:bg-zinc-800/40" : undefined}
+                    className={`cursor-move transition-colors ${
+                      checked ? "bg-zinc-100/60 dark:bg-zinc-800/40" : ""
+                    } ${
+                      isDragging
+                        ? "bg-zinc-200/90 dark:bg-zinc-700/70 ring-2 ring-zinc-400/60 dark:ring-zinc-500/60 shadow-lg"
+                        : ""
+                    } ${
+                      isDropTarget
+                        ? "bg-blue-100/70 dark:bg-blue-900/40 ring-1 ring-blue-300/50 dark:ring-blue-700/50"
+                        : ""
+                    }`}
+                    style={Object.keys(style).length > 0 ? style : undefined}
+                    draggable
+                    onDragStart={(event) => {
+                      setDraggingIndex(index);
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", key);
+                    }}
+                    onDragEnter={(event) => {
+                      event.preventDefault();
+                      if (draggingIndex === null || draggingIndex === index) {
+                        return;
+                      }
+                      if (dropTargetIndex !== index) {
+                        setDropTargetIndex(index);
+                      }
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      if (draggingIndex === null || draggingIndex === index) {
+                        return;
+                      }
+                      if (dropTargetIndex !== index) {
+                        setDropTargetIndex(index);
+                      }
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      if (draggingIndex === null) {
+                        return;
+                      }
+                      reorderRows(draggingIndex, index);
+                      setDraggingIndex(null);
+                      setDropTargetIndex(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggingIndex(null);
+                      setDropTargetIndex(null);
+                    }}
                   >
                     <td className="px-3 py-2">
                       <input
@@ -463,28 +550,6 @@ export function MetricsOverview({
                         checked={checked}
                         onChange={() => handleToggleRow(key)}
                       />
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          className="rounded border border-zinc-300 px-1 py-0.5 text-[10px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                          onClick={() => handleMoveRow(index, -1)}
-                          disabled={index === 0}
-                          aria-label="Move row up"
-                        >
-                          ↑
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded border border-zinc-300 px-1 py-0.5 text-[10px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                          onClick={() => handleMoveRow(index, 1)}
-                          disabled={index === rowsWithNames.length - 1}
-                          aria-label="Move row down"
-                        >
-                          ↓
-                        </button>
-                      </div>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-zinc-700 dark:text-zinc-200">
                       <input

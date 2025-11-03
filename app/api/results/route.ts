@@ -21,6 +21,66 @@ type ParsedDirectory = {
 
 const NORMALIZE_ITERATION_REGEX = /(\d+)(?!.*\d)/;
 
+async function calculateDirectorySize(directoryPath: string): Promise<number> {
+  let total = 0;
+
+  try {
+    const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(directoryPath, entry.name);
+
+      if (entry.isDirectory()) {
+        total += await calculateDirectorySize(fullPath);
+      } else if (entry.isFile()) {
+        try {
+          const stats = await fs.stat(fullPath);
+          total += stats.size;
+        } catch {
+          // ignore files that cannot be read
+        }
+      }
+    }
+  } catch {
+    // ignore directories that cannot be read
+  }
+
+  return total;
+}
+
+async function computePointCloudSizeMb(
+  baseDirectory: string,
+  iterationName: string,
+  normalizedIteration: string
+): Promise<number | null> {
+  const candidates = new Set<string>();
+  candidates.add(path.join(baseDirectory, "point_cloud", `iteration_${normalizedIteration}`));
+
+  if (iterationName) {
+    candidates.add(path.join(baseDirectory, "point_cloud", iterationName));
+  }
+
+  if (normalizedIteration && normalizedIteration !== iterationName) {
+    candidates.add(path.join(baseDirectory, "point_cloud", normalizedIteration));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const stats = await fs.stat(candidate);
+      if (!stats.isDirectory()) {
+        continue;
+      }
+
+      const totalBytes = await calculateDirectorySize(candidate);
+      return totalBytes / (1024 * 1024);
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
 function normalizeIterationName(name: string): string {
   const match = name.match(NORMALIZE_ITERATION_REGEX);
   if (match?.[1]) {
@@ -76,6 +136,13 @@ async function parseDirectory(directory: string): Promise<ResultsRow[]> {
       } else {
         metricsRecord[metricName] = null;
       }
+    }
+
+    const pointCloudSize = await computePointCloudSizeMb(parsed.resultsPath.replace(/results\.json$/, ""), iterationName, normalizedIteration);
+    if (typeof pointCloudSize === "number" && Number.isFinite(pointCloudSize)) {
+      metricsRecord.point_cloud_size_mb = pointCloudSize;
+    } else {
+      metricsRecord.point_cloud_size_mb = null;
     }
 
     rows.push({

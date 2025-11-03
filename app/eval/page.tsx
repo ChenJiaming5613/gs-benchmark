@@ -2,14 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  DirectorySelector,
-  type DirectorySelectorResult,
-} from "@/components/DirectorySelector";
-import { type ImageMetric } from "@/components/ImageCard";
+import { DirectorySelector, type DirectorySelectorResult } from "@/components/DirectorySelector";
 import { loadEvalCache, saveEvalCache } from "@/components/EvalCache";
-import { MetricsOverview, type MetricsOverviewRow } from "@/components/MetricsOverview";
+import { type ImageMetric } from "@/components/ImageCard";
 import { ImageGallery, type ImageGalleryDirectory } from "@/components/ImageGallery";
+import { MetricsOverview, type MetricsOverviewRow } from "@/components/MetricsOverview";
 
 type ImageEntry = {
   token: string;
@@ -312,13 +309,23 @@ export default function EvalPage() {
   }, [directories, experimentNames, selectedMetricRowKeys]);
 
   const galleryDirectories = useMemo<ImageGalleryDirectory[]>(() => {
-    if (!selectedMetricRowData.length) {
+    if (!selectedMetricRowData.length || !selectedMetricRowKeys.length) {
       return [];
     }
 
+    const rowMap = new Map<string, MetricsOverviewRow>();
+    selectedMetricRowData.forEach((row) => {
+      rowMap.set(`${row.experiment}__${row.rawIteration}`, row);
+    });
+
     const results: ImageGalleryDirectory[] = [];
 
-    for (const row of selectedMetricRowData) {
+    for (const key of selectedMetricRowKeys) {
+      const row = rowMap.get(key);
+      if (!row) {
+        continue;
+      }
+
       const directoryEntry = directoryData[row.experiment];
       if (!directoryEntry) {
         continue;
@@ -401,7 +408,7 @@ export default function EvalPage() {
     }
 
     return results;
-  }, [directoryData, selectedMetricRowData]);
+  }, [directoryData, selectedMetricRowData, selectedMetricRowKeys]);
 
   return (
     <main className="min-h-screen bg-zinc-50 py-12 text-zinc-900 dark:bg-black dark:text-zinc-50">

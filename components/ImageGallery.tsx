@@ -40,6 +40,26 @@ export function ImageGallery({ directories }: ImageGalleryProps) {
       });
     });
 
+    const orderMap = new Map<string, number>();
+    directories.forEach((entry, index) => {
+      orderMap.set(`${entry.directory}__${entry.iteration ?? "__"}`, index);
+    });
+
+    for (const list of map.values()) {
+      list.sort((a, b) => {
+        const keyA = `${a.directory}__${a.iteration ?? "__"}`;
+        const keyB = `${b.directory}__${b.iteration ?? "__"}`;
+        const orderA = orderMap.get(keyA) ?? Number.MAX_SAFE_INTEGER;
+        const orderB = orderMap.get(keyB) ?? Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) {
+          return orderA - orderB;
+        }
+        const labelA = a.label ?? a.directory;
+        const labelB = b.label ?? b.directory;
+        return labelA.localeCompare(labelB, "en", { numeric: true });
+      });
+    }
+
     return map;
   }, [directories]);
 
