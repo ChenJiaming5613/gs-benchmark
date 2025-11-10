@@ -29,6 +29,15 @@ const METRIC_LABELS: Record<string, string> = {
 
 const formatMetricLabel = (metric: string) => METRIC_LABELS[metric] ?? metric;
 
+const HIGHLIGHT_TOP_METRICS = new Set(["ssim", "psnr"]);
+const HIGHLIGHT_BOTTOM_METRICS = new Set(["lpips"]);
+const METRIC_MEDAL_CLASSES = [
+  "text-red-500 dark:text-red-300",
+  "text-amber-500 dark:text-amber-300",
+  "text-lime-400 dark:text-lime-300",
+];
+const VALUE_EPSILON = 1e-9;
+
 export type MetricsOverviewRow = {
   experiment: string;
   iteration: string;
@@ -282,13 +291,66 @@ export function MetricsOverview({
     return Array.from(names).sort();
   }, [rowsWithNames]);
 
-  const rowMap = useMemo(() => {
-    const map = new Map<string, MetricsOverviewRow>();
-    rowsWithNames.forEach((row) => {
-      map.set(getRowKey(row), row);
+  const metricHighlightMap = useMemo(() => {
+    const highlights = new Map<string, Record<string, string>>();
+
+    metricColumns.forEach((metric) => {
+      const normalizedMetric = metric.toLowerCase();
+      const highlightTop = HIGHLIGHT_TOP_METRICS.has(normalizedMetric);
+      const highlightBottom = HIGHLIGHT_BOTTOM_METRICS.has(normalizedMetric);
+
+      if (!highlightTop && !highlightBottom) {
+        return;
+      }
+
+      const entries: { key: string; value: number }[] = [];
+
+      rowsWithNames.forEach((row) => {
+        const raw = row.metrics?.[metric] ?? null;
+        if (typeof raw === "number" && Number.isFinite(raw)) {
+          entries.push({ key: getRowKey(row), value: raw });
+        }
+      });
+
+      if (!entries.length) {
+        return;
+      }
+
+      entries.sort((a, b) => {
+        if (highlightTop) {
+          return b.value - a.value;
+        }
+        return a.value - b.value;
+      });
+
+      let uniqueRank = 0;
+      let lastValue: number | null = null;
+      let currentMedalIndex = -1;
+
+      for (const entry of entries) {
+        if (lastValue === null || Math.abs(entry.value - lastValue) > VALUE_EPSILON) {
+          uniqueRank += 1;
+
+          if (uniqueRank > METRIC_MEDAL_CLASSES.length) {
+            break;
+          }
+
+          currentMedalIndex = uniqueRank - 1;
+          lastValue = entry.value;
+        }
+
+        if (currentMedalIndex < 0 || currentMedalIndex >= METRIC_MEDAL_CLASSES.length) {
+          continue;
+        }
+
+        const existing = highlights.get(entry.key) ?? {};
+        existing[metric] = METRIC_MEDAL_CLASSES[currentMedalIndex];
+        highlights.set(entry.key, existing);
+      }
     });
-    return map;
-  }, [rowsWithNames, getRowKey]);
+
+    return highlights;
+  }, [getRowKey, metricColumns, rowsWithNames]);
 
   const lastSyncedSignature = useRef<string | null>(null);
 
@@ -301,7 +363,7 @@ export function MetricsOverview({
     const selectedRows: MetricsOverviewRow[] = [];
 
     selectedRowKeys.forEach((key) => {
-      const row = rowMap.get(key);
+      const row = rowsWithNames.find((candidate) => getRowKey(candidate) === key);
       if (row) {
         validKeys.push(key);
         selectedRows.push(row);
@@ -321,7 +383,7 @@ export function MetricsOverview({
 
     lastSyncedSignature.current = signature;
     onSelectedRowKeysChange(validKeys, selectedRows);
-  }, [selectedRowKeys, rowMap, onSelectedRowKeysChange]);
+  }, [selectedRowKeys, rowsWithNames, getRowKey, onSelectedRowKeysChange]);
 
   const handleExperimentNameChange = (experiment: string, value: string) => {
     updateExperimentNames((previous) => {
@@ -367,13 +429,26 @@ export function MetricsOverview({
       }
 
       const sourceRows = updatedRows ?? rows;
-      const selectedSet = new Set(selectedRowKeys);
-      const orderedSelected: MetricsOverviewRow[] = sourceRows.filter((row) => selectedSet.has(getRowKey(row)));
-      const nextKeys = orderedSelected.map((row) => getRowKey(row));
-      const enrichedRows = orderedSelected.map((row) => ({
-        ...row,
-        experimentName: row.experimentName ?? experimentNames[row.experiment] ?? "",
-      }));
+      const rowByKey = new Map<string, MetricsOverviewRow>();
+      sourceRows.forEach((row) => {
+        rowByKey.set(getRowKey(row), row);
+      });
+
+      const nextKeys: string[] = [];
+      const enrichedRows: MetricsOverviewRow[] = [];
+
+      selectedRowKeys.forEach((selectedKey) => {
+        const row = rowByKey.get(selectedKey);
+        if (!row) {
+          return;
+        }
+        nextKeys.push(selectedKey);
+        enrichedRows.push({
+          ...row,
+          experimentName: row.experimentName ?? experimentNames[row.experiment] ?? "",
+        });
+      });
+
       onSelectedRowKeysChange(nextKeys, enrichedRows);
       setDropTargetIndex(null);
     },
@@ -385,23 +460,21 @@ export function MetricsOverview({
       return;
     }
 
-    const nextKeys = new Set(selectedRowKeys);
-    if (nextKeys.has(key)) {
-      nextKeys.delete(key);
-    } else {
-      nextKeys.add(key);
+    const exists = rowsWithNames.some((row) => getRowKey(row) === key);
+    if (!exists) {
+      return;
     }
 
-    const orderedKeys: string[] = [];
-    const orderedRows: MetricsOverviewRow[] = [];
+    let orderedKeys: string[];
+    if (selectedRowKeys.includes(key)) {
+      orderedKeys = selectedRowKeys.filter((existingKey) => existingKey !== key);
+    } else {
+      orderedKeys = [...selectedRowKeys, key];
+    }
 
-    rowsWithNames.forEach((row) => {
-      const rowKey = getRowKey(row);
-      if (nextKeys.has(rowKey)) {
-        orderedKeys.push(rowKey);
-        orderedRows.push(row);
-      }
-    });
+    const orderedRows: MetricsOverviewRow[] = orderedKeys
+      .map((orderedKey) => rowsWithNames.find((row) => getRowKey(row) === orderedKey))
+      .filter((value): value is MetricsOverviewRow => Boolean(value));
 
     onSelectedRowKeysChange(orderedKeys, orderedRows);
   };
@@ -471,7 +544,8 @@ export function MetricsOverview({
             ) : (
               rowsWithNames.map((row, index) => {
                 const key = `${row.experiment}__${row.rawIteration}`;
-                const checked = selectedRowKeys.includes(key);
+                const selectionOrder = selectedRowKeys.indexOf(key);
+                const checked = selectionOrder !== -1;
                 const currentExperimentName = row.experimentName ?? "";
                 const isDragging = draggingIndex === index;
                 const isDropTarget =
@@ -544,12 +618,17 @@ export function MetricsOverview({
                     }}
                   >
                     <td className="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-                        checked={checked}
-                        onChange={() => handleToggleRow(key)}
-                      />
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                          checked={checked}
+                          onChange={() => handleToggleRow(key)}
+                        />
+                        <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                          {checked ? selectionOrder : " "}
+                        </span>
+                      </div>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-zinc-700 dark:text-zinc-200">
                       <input
@@ -567,10 +646,12 @@ export function MetricsOverview({
                     </td>
                     {metricColumns.map((metric) => {
                       const value = row.metrics?.[metric] ?? null;
+                      const highlightClass = metricHighlightMap.get(key)?.[metric] ?? "";
+                      const textClass = highlightClass || "text-zinc-700 dark:text-zinc-200";
                       return (
                         <td
                           key={`${key}-${metric}`}
-                          className="whitespace-nowrap px-3 py-2 text-zinc-700 dark:text-zinc-200"
+                          className={`whitespace-nowrap px-3 py-2 ${textClass}`}
                         >
                           {typeof value === "number" && Number.isFinite(value)
                             ? value.toFixed(4)

@@ -38,7 +38,7 @@ export function ImageCompare({ imageName, items }: ImageCompareProps) {
           return (
             <div
               key={key}
-              className="flex min-w-[240px] max-w-xs flex-col gap-2"
+              className="flex min-w-[240px] max-w-xs flex-shrink-0 flex-col gap-2"
             >
               <div
                 className="truncate text-[11px] text-zinc-500 dark:text-zinc-400"
