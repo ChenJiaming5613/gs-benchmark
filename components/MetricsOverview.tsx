@@ -68,6 +68,7 @@ export function MetricsOverview({
   const pendingExperimentNamesRef = useRef<ExperimentNames | null>(null);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   const updateExperimentNames = useCallback(
     (updater: ExperimentNamesUpdater, options?: UpdateExperimentNamesOptions) => {
@@ -283,6 +284,16 @@ export function MetricsOverview({
     [rows, experimentNames]
   );
 
+  const allRowKeys = useMemo(() => rowsWithNames.map((row) => getRowKey(row)), [rowsWithNames, getRowKey]);
+
+  const selectedCount = useMemo(
+    () => selectedRowKeys.filter((key) => allRowKeys.includes(key)).length,
+    [selectedRowKeys, allRowKeys]
+  );
+
+  const isAllSelected = allRowKeys.length > 0 && selectedCount === allRowKeys.length;
+  const isSomeSelected = selectedCount > 0 && selectedCount < allRowKeys.length;
+
   const metricColumns = useMemo(() => {
     const names = new Set<string>();
     rowsWithNames.forEach((row) => {
@@ -479,6 +490,84 @@ export function MetricsOverview({
     onSelectedRowKeysChange(orderedKeys, orderedRows);
   };
 
+  const handleToggleAll = useCallback(() => {
+    if (!onSelectedRowKeysChange) {
+      return;
+    }
+
+    if (isAllSelected) {
+      onSelectedRowKeysChange([], []);
+      return;
+    }
+
+    if (!rowsWithNames.length) {
+      onSelectedRowKeysChange([], []);
+      return;
+    }
+
+    const keys = rowsWithNames.map((row) => getRowKey(row));
+    onSelectedRowKeysChange(keys, rowsWithNames);
+  }, [getRowKey, isAllSelected, onSelectedRowKeysChange, rowsWithNames]);
+
+  useEffect(() => {
+    if (!selectAllRef.current) {
+      return;
+    }
+    selectAllRef.current.indeterminate = isSomeSelected;
+  }, [isSomeSelected]);
+
+  const handleExport = useCallback(() => {
+    if (!rowsWithNames.length) {
+      return;
+    }
+
+    const metricHeaders = metricColumns.filter((metric) => metric !== "point_cloud_size_mb");
+    const headers = ["exp_name", "model_path", "iteration", ...metricHeaders, "model_size"];
+
+    const formatValue = (value: number | null | undefined) => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value.toFixed(4);
+      }
+      return value ?? "";
+    };
+
+    const escapeCsv = (value: string | number) => {
+      const stringValue = String(value ?? "");
+      if (stringValue === "") {
+        return "";
+      }
+      if (/[",\n]/.test(stringValue)) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    const rows = rowsWithNames.map((row) => {
+      const fields: (string | number)[] = [
+        row.experimentName ?? row.experiment,
+        row.experiment,
+        row.iteration === "-" ? "" : row.iteration,
+        ...metricHeaders.map((metric) => formatValue(row.metrics?.[metric] ?? null)),
+        formatValue(row.metrics?.point_cloud_size_mb ?? null),
+      ];
+
+      return fields.map(escapeCsv).join(",");
+    });
+
+    const csvContent = [headers.map(escapeCsv).join(","), ...rows].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `metrics-overview-${timestamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [metricColumns, rowsWithNames]);
+
   return (
     <section className="flex flex-col gap-4 rounded-lg border border-zinc-200 bg-white p-6 text-sm shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
       <div>
@@ -500,8 +589,17 @@ export function MetricsOverview({
         <table className="min-w-full divide-y divide-zinc-200 text-xs dark:divide-zinc-700">
           <thead className="bg-zinc-100 dark:bg-zinc-950">
             <tr>
-              <th className="w-12 px-3 py-2 text-left text-zinc-900 dark:text-zinc-100">
-                <span className="sr-only">选择</span>
+              <th className="w-16 px-3 py-2 text-left align-middle text-zinc-900 dark:text-zinc-100">
+                <div className="flex h-full items-center">
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                    checked={isAllSelected}
+                    onChange={handleToggleAll}
+                    disabled={!rowsWithNames.length}
+                  />
+                </div>
               </th>
               <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-zinc-900 dark:text-zinc-100">
                 exp_name
@@ -665,6 +763,17 @@ export function MetricsOverview({
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={!rowsWithNames.length}
+          className="rounded-md bg-zinc-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+        >
+          Export CSV
+        </button>
       </div>
     </section>
   );
