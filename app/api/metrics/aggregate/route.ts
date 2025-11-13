@@ -37,7 +37,7 @@ async function calculateDirectorySize(directoryPath: string): Promise<number> {
           const stats = await fs.stat(fullPath);
           total += stats.size;
         } catch {
-          // ignore files that cannot be read
+          continue;
         }
       }
     }
@@ -102,18 +102,18 @@ async function parseDirectory(directory: string): Promise<ResultsRow[]> {
   try {
     content = await fs.readFile(parsed.resultsPath, "utf8");
   } catch {
-    throw new Error(`无法读取 ${parsed.resultsPath}`);
+    throw new Error(`Unable to read ${parsed.resultsPath}`);
   }
 
   let data: unknown;
   try {
     data = JSON.parse(content);
   } catch {
-    throw new Error(`results.json 格式错误：${parsed.resultsPath}`);
+    throw new Error(`Invalid results.json format: ${parsed.resultsPath}`);
   }
 
   if (!data || typeof data !== "object") {
-    throw new Error(`results.json 内容无效：${parsed.resultsPath}`);
+    throw new Error(`results.json has invalid content: ${parsed.resultsPath}`);
   }
 
   const entries = Object.entries(data as Record<string, unknown>);
@@ -138,7 +138,11 @@ async function parseDirectory(directory: string): Promise<ResultsRow[]> {
       }
     }
 
-    const pointCloudSize = await computePointCloudSizeMb(parsed.resultsPath.replace(/results\.json$/, ""), iterationName, normalizedIteration);
+    const pointCloudSize = await computePointCloudSizeMb(
+      parsed.resultsPath.replace(/results\.json$/, ""),
+      iterationName,
+      normalizedIteration
+    );
     if (typeof pointCloudSize === "number" && Number.isFinite(pointCloudSize)) {
       metricsRecord.point_cloud_size_mb = pointCloudSize;
     } else {
@@ -162,11 +166,11 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "请求体必须是 JSON 格式" }, { status: 400 });
+    return NextResponse.json({ error: "Request body must be JSON." }, { status: 400 });
   }
 
   if (!Array.isArray(body.directories)) {
-    return NextResponse.json({ error: "directories 字段必须是数组" }, { status: 400 });
+    return NextResponse.json({ error: "The directories field must be an array." }, { status: 400 });
   }
 
   const directories = body.directories
@@ -187,7 +191,7 @@ export async function POST(request: Request) {
       rows.push(...next);
     } catch (error) {
       const message =
-        error instanceof Error && error.message ? error.message : `无法读取目录：${directory}`;
+        error instanceof Error && error.message ? error.message : `Unable to read directory: ${directory}`;
       errors.push(message);
     }
   }

@@ -139,7 +139,7 @@ export function MetricsOverview({
       setErrors([]);
 
       try {
-        const response = await fetch("/api/results", {
+        const response = await fetch("/api/metrics/aggregate", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

@@ -8,7 +8,7 @@ const execFileAsync = promisify(execFile);
 const WINDOWS_DIALOG_COMMAND = `
 Add-Type -AssemblyName System.Windows.Forms;
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog;
-$dialog.Description = "选择本地图片目录";
+$dialog.Description = "Select a local image directory";
 $dialog.ShowNewFolderButton = $false;
 if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
   Write-Output $dialog.SelectedPath;
@@ -18,7 +18,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 export async function POST() {
   if (platform() !== "win32") {
     return NextResponse.json(
-      { error: "仅支持在 Windows 环境下自动选择目录，请手动输入路径" },
+      { error: "Automatic directory picker is only available on Windows. Please enter the path manually." },
       { status: 400 }
     );
   }
@@ -35,7 +35,7 @@ export async function POST() {
 
     if (!directory) {
       return NextResponse.json(
-        { error: "未选择任何目录" },
+        { error: "No directory selected." },
         { status: 400 }
       );
     }
@@ -44,7 +44,7 @@ export async function POST() {
   } catch (error) {
     console.error("select-directory", error);
     return NextResponse.json(
-      { error: "打开目录选择对话框失败，请确认服务器具有图形界面权限" },
+      { error: "Failed to open the directory picker. Please ensure the server has GUI permissions." },
       { status: 500 }
     );
   }

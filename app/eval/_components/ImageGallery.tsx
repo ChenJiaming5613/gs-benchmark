@@ -2,8 +2,8 @@
 
 import { useMemo } from "react";
 
-import { ImageCompare, type ImageCompareItem } from "@/components/ImageCompare";
-import type { ImageCardProps } from "@/components/ImageCard";
+import { ImageCompare, type ImageCompareItem } from "./ImageCompare";
+import type { ImageCardProps } from "./ImageCard";
 
 export type ImageGalleryDirectory = {
   directory: string;

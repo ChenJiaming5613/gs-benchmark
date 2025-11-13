@@ -25,6 +25,24 @@ const encodePath = (filePath: string) =>
 const isImageFile = (filePath: string) =>
   IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 
+type ImagePayload = {
+  name: string;
+  relativePath: string;
+  absolutePath: string;
+  token: string;
+};
+
+type IterationSummary = {
+  name: string;
+  renders: ImagePayload[];
+  metrics?: Record<string, Record<string, number>>;
+  overview?: Record<string, number>;
+};
+
+type InspectRequestBody = {
+  directory?: string;
+};
+
 const walkDirectory = async (targetDir: string) => {
   const results: { name: string; fullPath: string }[] = [];
   const queue: string[] = [targetDir];
@@ -36,8 +54,7 @@ const walkDirectory = async (targetDir: string) => {
     let dirEntries;
     try {
       dirEntries = await fs.readdir(current, { withFileTypes: true });
-    } catch (error) {
-      // Skip directories we cannot access
+    } catch {
       continue;
     }
 
@@ -58,97 +75,23 @@ const walkDirectory = async (targetDir: string) => {
   return results;
 };
 
-type ImagePayload = {
-  name: string;
-  relativePath: string;
-  absolutePath: string;
-  token: string;
-};
-
-type ListRequestBody = {
-  directory?: string;
-};
-
-type IterationSummary = {
-  name: string;
-  renders: ImagePayload[];
-  metrics?: Record<string, Record<string, number>>;
-  overview?: Record<string, number>;
-};
-
-export async function POST(request: Request) {
-  let body: ListRequestBody;
-
+async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
-    body = await request.json();
+    const raw = await fs.readFile(filePath, "utf8");
+    return JSON.parse(raw) as T;
   } catch {
-    return NextResponse.json(
-      { error: "请求体必须是 JSON 格式" },
-      { status: 400 }
-    );
+    return null;
   }
+}
 
-  const directory = body.directory?.trim();
-
-  if (!directory) {
-    return NextResponse.json(
-      { error: "请提供要扫描的目录路径" },
-      { status: 400 }
-    );
-  }
-
-  const resolvedDirectory = path.resolve(directory);
-
-  let stats;
-  try {
-    stats = await fs.stat(resolvedDirectory);
-  } catch (error) {
-    return NextResponse.json(
-      { error: "无法访问指定目录，请确认路径是否正确" },
-      { status: 400 }
-    );
-  }
-
-  if (!stats.isDirectory()) {
-    return NextResponse.json(
-      { error: "指定路径不是一个目录" },
-      { status: 400 }
-    );
-  }
-
-  const records = await walkDirectory(resolvedDirectory);
-
-  const images: ImagePayload[] = records.map(({ name, fullPath }) => ({
-    name,
-    relativePath: path.relative(resolvedDirectory, fullPath) || name,
-    absolutePath: fullPath,
-    token: encodePath(fullPath),
-  }));
-
-  const perViewPath = path.join(resolvedDirectory, "per_view.json");
-  let perView: Record<string, Record<string, Record<string, number>>> | null =
-    null;
-
-  const resultsPath = path.join(resolvedDirectory, "results.json");
-  let results: Record<string, Record<string, number>> | null = null;
-
-  try {
-    const raw = await fs.readFile(perViewPath, "utf8");
-    perView = JSON.parse(raw);
-  } catch {
-    perView = null;
-  }
-
-  try {
-    const raw = await fs.readFile(resultsPath, "utf8");
-    results = JSON.parse(raw);
-  } catch {
-    results = null;
-  }
-
-  const iterations: IterationSummary[] = [];
-
+async function loadIterationSummaries(
+  resolvedDirectory: string,
+  perView: Record<string, Record<string, Record<string, number>>> | null,
+  results: Record<string, Record<string, number>> | null
+): Promise<IterationSummary[]> {
   const testDir = path.join(resolvedDirectory, "test");
+  const summaries: IterationSummary[] = [];
+
   try {
     const entries = await fs.readdir(testDir, { withFileTypes: true });
 
@@ -184,7 +127,7 @@ export async function POST(request: Request) {
         renderFiles = [];
       }
 
-      iterations.push({
+      summaries.push({
         name: iterationName,
         renders: renderFiles,
         metrics: perView?.[iterationName] ?? undefined,
@@ -195,11 +138,58 @@ export async function POST(request: Request) {
     // ignore if test directory missing
   }
 
-  iterations.sort((a, b) => b.name.localeCompare(a.name, "en", { numeric: true }));
+  summaries.sort((a, b) => b.name.localeCompare(a.name, "en", { numeric: true }));
+  return summaries;
+}
+
+export async function POST(request: Request) {
+  let body: InspectRequestBody;
+
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must be JSON." }, { status: 400 });
+  }
+
+  const directory = body.directory?.trim();
+
+  if (!directory) {
+    return NextResponse.json({ error: "Please provide a directory path to inspect." }, { status: 400 });
+  }
+
+  const resolvedDirectory = path.resolve(directory);
+
+  let stats;
+  try {
+    stats = await fs.stat(resolvedDirectory);
+  } catch (error) {
+    return NextResponse.json({ error: "Unable to access the specified directory. Please verify the path." }, { status: 400 });
+  }
+
+  if (!stats.isDirectory()) {
+    return NextResponse.json({ error: "The specified path is not a directory." }, { status: 400 });
+  }
+
+  const records = await walkDirectory(resolvedDirectory);
+
+  const images: ImagePayload[] = records.map(({ name, fullPath }) => ({
+    name,
+    relativePath: path.relative(resolvedDirectory, fullPath) || name,
+    absolutePath: fullPath,
+    token: encodePath(fullPath),
+  }));
+
+  const perViewPath = path.join(resolvedDirectory, "per_view.json");
+  const perView = await readJsonFile<Record<string, Record<string, Record<string, number>>>>(perViewPath);
+
+  const resultsPath = path.join(resolvedDirectory, "results.json");
+  const results = await readJsonFile<Record<string, Record<string, number>>>(resultsPath);
+
+  const iterations = await loadIterationSummaries(resolvedDirectory, perView, results);
 
   return NextResponse.json({
+    baseDirectory: resolvedDirectory,
     images,
     iterations,
-    baseDirectory: resolvedDirectory,
   });
 }

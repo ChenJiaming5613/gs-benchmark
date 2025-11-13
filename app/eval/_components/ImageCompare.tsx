@@ -1,6 +1,6 @@
 "use client";
 
-import { ImageCard, type ImageCardProps } from "@/components/ImageCard";
+import { ImageCard, type ImageCardProps } from "./ImageCard";
 
 export type ImageCompareItem = {
   name: string;

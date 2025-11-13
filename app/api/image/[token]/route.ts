@@ -42,7 +42,7 @@ export async function GET(
   const { token } = await params;
 
   if (!token) {
-    return NextResponse.json({ error: "缺少图片标识" }, { status: 400 });
+    return NextResponse.json({ error: "Image token is required." }, { status: 400 });
   }
 
   let filePath: string;
@@ -50,16 +50,16 @@ export async function GET(
   try {
     filePath = decodeToken(token);
   } catch {
-    return NextResponse.json({ error: "标识无效" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid token." }, { status: 400 });
   }
 
   try {
     const stats = await fs.stat(filePath);
     if (!stats.isFile()) {
-      return NextResponse.json({ error: "文件不存在" }, { status: 404 });
+      return NextResponse.json({ error: "File not found." }, { status: 404 });
     }
   } catch {
-    return NextResponse.json({ error: "文件不存在" }, { status: 404 });
+    return NextResponse.json({ error: "File not found." }, { status: 404 });
   }
 
   const stream = createReadStream(filePath);

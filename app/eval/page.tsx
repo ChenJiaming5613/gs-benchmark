@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { DirectorySelector, type DirectorySelectorResult } from "@/components/DirectorySelector";
-import { loadEvalCache, saveEvalCache } from "@/components/EvalCache";
-import { type ImageMetric } from "@/components/ImageCard";
-import { ImageGallery, type ImageGalleryDirectory } from "@/components/ImageGallery";
-import { MetricsOverview, type MetricsOverviewRow } from "@/components/MetricsOverview";
+import { DirectorySelector, type DirectorySelectorResult } from "./_components/DirectorySelector";
+import { loadEvalCache, saveEvalCache } from "./_components/EvalCache";
+import { type ImageMetric } from "./_components/ImageCard";
+import { ImageGallery, type ImageGalleryDirectory } from "./_components/ImageGallery";
+import { MetricsOverview, type MetricsOverviewRow } from "./_components/MetricsOverview";
 
 type ImageEntry = {
   token: string;
@@ -56,7 +56,7 @@ export default function EvalPage() {
       setLoading(true);
 
       try {
-        const response = await fetch("/api/list-images", {
+        const response = await fetch("/api/directories/inspect", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
