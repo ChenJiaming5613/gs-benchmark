@@ -8,16 +8,32 @@ export type UploadPanelProps = {
   processedLabel?: string;
   originalLabel?: string;
   onImagesChange?: (processed: UploadedImage | null, original: UploadedImage | null) => void;
+  initialProcessed?: UploadedImage | null;
+  initialOriginal?: UploadedImage | null;
 };
 
 export function UploadPanel({
   processedLabel = "Processed Image",
   originalLabel = "Original Image",
   onImagesChange,
+  initialProcessed = null,
+  initialOriginal = null,
 }: UploadPanelProps) {
-  const [processed, setProcessed] = useState<UploadedImage | null>(null);
-  const [original, setOriginal] = useState<UploadedImage | null>(null);
+  const [processed, setProcessed] = useState<UploadedImage | null>(initialProcessed);
+  const [original, setOriginal] = useState<UploadedImage | null>(initialOriginal);
   const [error, setError] = useState<string | null>(null);
+
+  // sync internal state with external initial values (e.g., restored from cache)
+  // do not call onImagesChange here to avoid loops; page.tsx already owns the source of truth
+  if (initialProcessed !== processed) {
+    // lightweight sync on render; values are small and changes rare
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    setProcessed(initialProcessed);
+  }
+  if (initialOriginal !== original) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    setOriginal(initialOriginal);
+  }
 
   const readFile = useCallback((file: File): Promise<UploadedImage> => {
     return new Promise((resolve, reject) => {
