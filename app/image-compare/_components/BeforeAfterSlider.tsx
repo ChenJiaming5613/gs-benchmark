@@ -140,7 +140,7 @@ export function BeforeAfterSlider({
         >
           <button
             type="button"
-            className="absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black bg-white shadow-lg outline-none transition focus-visible:ring-2 focus-visible:ring-black/60 dark:border-white dark:bg-black dark:focus-visible:ring-white/70"
+            className="absolute left-1/2 top-1/2 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black bg-white shadow-md outline-none transition focus-visible:ring-2 focus-visible:ring-black/60 dark:border-white dark:bg-black dark:focus-visible:ring-white/70"
             onPointerDown={handleHandleDown}
             onPointerUp={handleHandleUp}
             aria-label="Drag to adjust comparison"
