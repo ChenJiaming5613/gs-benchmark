@@ -183,18 +183,19 @@ export function MetricsOverview({
         });
 
         const firstDirectory = directories[0];
-        const augmentedRows = firstDirectory
-          ? [
-              {
-                experiment: firstDirectory,
-                iteration: "-",
-                rawIteration: "__gt__",
-                metrics: {},
-                experimentName: "gt",
-              },
-              ...sortedRows,
-            ]
-          : sortedRows;
+        const augmentedRows =
+          firstDirectory && sortedRows.some((row) => row.experiment === firstDirectory)
+            ? [
+                {
+                  experiment: firstDirectory,
+                  iteration: "-",
+                  rawIteration: "__gt__",
+                  metrics: {},
+                  experimentName: "gt",
+                },
+                ...sortedRows,
+              ]
+            : sortedRows;
 
         setRows(augmentedRows);
         setErrors(Array.isArray(payload?.errors) ? payload.errors : []);

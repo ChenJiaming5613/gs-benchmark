@@ -35,7 +35,6 @@ export default function EvalPage() {
   const [images, setImages] = useState<ImageEntry[]>([]);
   const [iterations, setIterations] = useState<IterationSummary[]>([]);
   const [, setSelectedIterationName] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [selectedMetricRowKeys, setSelectedMetricRowKeys] = useState<string[]>([]);
@@ -51,12 +50,10 @@ export default function EvalPage() {
 
       if (!trimmed) {
         setImages([]);
-        setError("Please select a valid directory");
         return { success: false, error: "Please select a valid directory" };
       }
 
       setLoading(true);
-      setError(null);
 
       try {
         const response = await fetch("/api/list-images", {
@@ -74,7 +71,6 @@ export default function EvalPage() {
           setIterations([]);
           setSelectedIterationName(null);
           const message = payload?.error || "Unable to read directory";
-          setError(message);
           return { success: false, error: message };
         }
 
@@ -118,7 +114,6 @@ export default function EvalPage() {
         setIterations([]);
         setSelectedIterationName(null);
         const message = "Cannot connect to the server. Please ensure the local service is running.";
-        setError(message);
         return { success: false, error: message };
       } finally {
         setLoading(false);
@@ -190,7 +185,6 @@ export default function EvalPage() {
             setImages([]);
             setIterations([]);
             setSelectedIterationName(null);
-            setError(null);
           }
         }
 
@@ -207,7 +201,6 @@ export default function EvalPage() {
       | null
     > => {
       setSelecting(true);
-      setError(null);
 
       try {
         const response = await fetch("/api/select-directory", {
@@ -218,7 +211,6 @@ export default function EvalPage() {
 
         if (!response.ok) {
           const message = payload?.error || "Unable to open directory picker";
-          setError(message);
           return { success: false, error: message };
         }
 
@@ -227,7 +219,6 @@ export default function EvalPage() {
 
         if (!chosenDirectory) {
           const message = "No directory selected";
-          setError(message);
           return { success: false, error: message };
         }
 
@@ -235,7 +226,6 @@ export default function EvalPage() {
       } catch (pickError) {
         console.error(pickError);
         const message = "Unable to open directory picker. Please ensure the server allows UI access.";
-        setError(message);
         return { success: false, error: message };
       } finally {
         setSelecting(false);
@@ -440,12 +430,6 @@ export default function EvalPage() {
         />
 
         {galleryDirectories.length > 0 && <ImageGallery directories={galleryDirectories} />}
-
-        {error && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-            {error}
-          </div>
-        )}
 
       </div>
     </main>
