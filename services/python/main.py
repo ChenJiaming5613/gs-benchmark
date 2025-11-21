@@ -1,31 +1,30 @@
-from typing import Union
-import cv2
-import numpy as np
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import Response
+from fastapi import FastAPI
 
-app = FastAPI()
+# Import the aggregated router from our new package
+# This router already includes routes for grayscale, fft, and frequency comparison
+from image_process import main_router as image_router
 
-@app.post("/fft")
-async def compute_fft(image: UploadFile = File(...)):
-    data = await image.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Empty image upload")
+app = FastAPI(
+    title="Image Processing Service",
+    description="A modular FastAPI service for image analysis and processing.",
+    version="1.0.0"
+)
 
-    file_array = np.frombuffer(data, dtype=np.uint8)
-    frame = cv2.imdecode(file_array, cv2.IMREAD_COLOR)
-    if frame is None:
-        raise HTTPException(status_code=400, detail="Unable to decode image")
+# Register the router
+# All endpoints defined in image_process will be available under /image-process prefix
+app.include_router(image_router)
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+@app.get("/")
+async def root():
+    """
+    Health check endpoint.
+    """
+    return {
+        "message": "Image Processing Service is running",
+        "docs_url": "/docs"
+    }
 
-    frequency = np.fft.fftshift(np.fft.fft2(gray))
-    magnitude = 20 * np.log(np.abs(frequency) + 1)
-    magnitude_normalized = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX)
-    magnitude_uint8 = magnitude_normalized.astype(np.uint8)
-
-    success, buffer = cv2.imencode(".png", magnitude_uint8)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to encode frequency spectrum")
-
-    return Response(content=buffer.tobytes(), media_type="image/png")
+if __name__ == "__main__":
+    import uvicorn
+    # Run the server using uvicorn when executing this script directly
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

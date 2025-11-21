@@ -1,9 +1,11 @@
 ```bash
+cd services\python
 python -m venv venv
-pip install "fastapi[standard]"
-pip install opencv-python
+.\venv\Scripts\activate.bat
+pip install "fastapi[all]"
+pip install matplotlib pillow
 ```
 
 ```bash
-fastapi dev main.py
+uvicorn main:app --host 0.0.0.0 --port 3001 --reload
 ```
