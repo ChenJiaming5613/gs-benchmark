@@ -3,7 +3,7 @@ cd services\python
 python -m venv venv
 .\venv\Scripts\activate.bat
 pip install "fastapi[all]"
-pip install matplotlib pillow
+pip install numpy matplotlib pillow plyfile
 ```
 
 ```bash

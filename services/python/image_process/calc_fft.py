@@ -3,7 +3,7 @@ from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import Response
 from fastapi.concurrency import run_in_threadpool
 from .utils import load_image_to_array, array_to_bytes, ImageSaveFormat
-from .to_grayscale import grayscale # Reuse internal logic
+from .to_grayscale import grayscale
 
 router = APIRouter()
 
