@@ -76,7 +76,9 @@ export function DirectorySelector({
       await handleAdd(result.directory);
     } catch (pickError) {
       const message =
-        pickError instanceof Error ? pickError.message : "Failed to open directory picker";
+        pickError instanceof Error
+          ? pickError.message
+          : "Failed to open directory picker";
       setError(message);
     }
   };
@@ -88,7 +90,8 @@ export function DirectorySelector({
           Model Paths Selector
         </label>
         <p className="text-xs text-zinc-500 dark:text-zinc-500">
-          Directories are read locally and never uploaded. You can add multiple model_path entries.
+          Directories are read locally and never uploaded. You can add multiple
+          model_path entries.
         </p>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-3">
           <input
@@ -124,7 +127,9 @@ export function DirectorySelector({
               className="inline-flex items-center justify-center rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400 dark:bg-zinc-200 dark:text-black dark:hover:bg-zinc-300"
               disabled={loading || selecting || disabled}
             >
-              {selecting ? "Opening directory picker..." : "Use directory picker"}
+              {selecting
+                ? "Opening directory picker..."
+                : "Use directory picker"}
             </button>
           )}
         </div>
@@ -149,6 +154,14 @@ export function DirectorySelector({
               </div>
               <button
                 type="button"
+                onClick={() => void navigator.clipboard.writeText(directory)}
+                className="shrink-0 rounded-md border border-transparent px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                disabled={loading || selecting || disabled}
+              >
+                Copy
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   resetError();
                   onRemove(index);
@@ -166,7 +179,6 @@ export function DirectorySelector({
           No directories added yet. Please enter or pick a model_path first.
         </p>
       )}
-
     </section>
   );
 }
